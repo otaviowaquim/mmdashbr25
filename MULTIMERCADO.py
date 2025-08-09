@@ -204,8 +204,9 @@ from scipy.cluster import hierarchy as sch
 from scipy.spatial import distance as ssd
 from dash import Dash
 
-app = Dash(__name__)
+app = Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
+
 
 
 load_dotenv()
@@ -272,9 +273,12 @@ df_q["value"] = df_q["c"]
 ihfa_idx = df_q.set_index("date")["value"].sort_index()
 
 # Meta Atuarial (Excel)
-arquivo   = r"C:\Users\otavi\OneDrive\Documentos\Estudos_2025\COINP\PAINEIS\serie_historica_atuarial_30_06.xlsx"
-df_atu    = pd.read_excel(arquivo, parse_dates=["Data"]).set_index("Data")
-atu_series = df_atu["Cota"].sort_index()
+try:
+    df_atu = pd.read_excel("serie_historica_atuarial_30_06.xlsx", parse_dates=["Data"]).set_index("Data")
+    atu_series = df_atu["Cota"].sort_index()
+except Exception:
+    atu_series = pd.Series(dtype="float64")
+
 
 # ======================
 # CÁLCULOS GLOBAIS (sem filtros)
