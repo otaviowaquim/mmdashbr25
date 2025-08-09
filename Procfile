@@ -1,1 +1,1 @@
-web: gunicorn --bind 0.0.0.0:$PORT MULTIMERCADO:app.server
+web: gunicorn app:server

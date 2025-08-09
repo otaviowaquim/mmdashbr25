@@ -7,11 +7,6 @@
 # etapa1_salvar_parquet.py
 
 import pandas as pd
-
-from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-
 import requests
 from io import BytesIO
 from bcb import sgs
@@ -207,6 +202,10 @@ from plotly.subplots import make_subplots
 from plotly.figure_factory import create_dendrogram
 from scipy.cluster import hierarchy as sch
 from scipy.spatial import distance as ssd
+from dash import Dash
+
+app = Dash(__name__)
+server = app.server
 
 
 load_dotenv()
@@ -237,8 +236,8 @@ import pandas as pd
 # ————————————————————————————————
 # Série de preços dos fundos e mapping
 # ————————————————————————————————
-df_p       = pd.read_parquet(DATA_DIR / "df_p.parquet")
-mapping_df = pd.read_parquet(DATA_DIR / "mapping.parquet")  # Ativo → Nome
+df_p       = pd.read_parquet("df_p.parquet")
+mapping_df = pd.read_parquet("mapping.parquet")  # Ativo → Nome
 mapping    = dict(zip(mapping_df["Ativo"], mapping_df["Nome"]))
 df_p = df_p.sort_index()
 
@@ -322,7 +321,7 @@ fund_options = [{"label": mapping.get(c, c), "value": c} for c in fund_codes]
 # ======================
 # CARREGA mapping_all PARA FILTROS MEG-143 E LIMPEZA
 # ======================
-df_all = pd.read_parquet(DATA_DIR / "mapping_all.parquet")
+df_all = pd.read_parquet("mapping_all.parquet")
 df_pl = df_all.set_index("Ativo")["Patrimônio|||em milhares"].fillna(0) * 1000
 
 
@@ -1963,8 +1962,9 @@ def update_dendrogram(vol_range, selected_codes):
 
 
 if __name__ == "__main__":
-    # só para rodar local; no Render quem executa é o Gunicorn
-    app.run(debug=True)
+    # Local
+    app.run_server(host="0.0.0.0", port=8050, debug=True)
+
 
 
 # In[8]:
