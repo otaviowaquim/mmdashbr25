@@ -146,28 +146,25 @@ fund_codes   = [c for c in df_ret_full.columns if any(c.startswith(code) for cod
 fund_options = [{"label": mapping.get(c, c), "value": c} for c in fund_codes]
 
 
-import os, requests, pandas as pd
+import os
+import pandas as pd
+import requests
 
-os.makedirs("data", exist_ok=True)
-
-def ensure_file(path, url_env):
-    if os.path.exists(path):
-        return
-    url = os.getenv(url_env)
-    if not url:
-        raise FileNotFoundError(f"{path} não encontrado e {url_env} não configurado.")
-    r = requests.get(url, timeout=120)
+def load_parquet_from_url(url):
+    r = requests.get(url)
     r.raise_for_status()
-    with open(path, "wb") as f:
-        f.write(r.content)
+    return pd.read_parquet(io.BytesIO(r.content))
 
-ensure_file("data/df_p.parquet",        "DFP_URL")
-ensure_file("data/mapping.parquet",     "MAPPING_URL")
-ensure_file("data/mapping_all.parquet", "MAPPING_ALL_URL")
+# Pegando URLs das variáveis de ambiente do Render
+dfp_url = os.getenv("DFP_URL")
+mapping_url = os.getenv("MAPPING_URL")
+mapping_all_url = os.getenv("MAPPING_ALL_URL")
 
-df_p        = pd.read_parquet("data/df_p.parquet")
-mapping_df  = pd.read_parquet("data/mapping.parquet")
-df_all      = pd.read_parquet("data/mapping_all.parquet")
+# Carregando arquivos do Google Drive
+df_p = load_parquet_from_url(dfp_url)
+mapping = load_parquet_from_url(mapping_url)
+mapping_all = load_parquet_from_url(mapping_all_url)
+
 
 
 
