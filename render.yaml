@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: mm-dash
+    env: python
+    plan: free
+    region: ohio
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT MULTIMERCADO:app.server
