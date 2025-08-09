@@ -9,7 +9,7 @@
 import pandas as pd
 import requests
 from io import BytesIO
-from bcb import sgs
+
 
 # === URLs da API Economatica ===
 url_cotacao = (
@@ -79,7 +79,8 @@ print("✅ Todos os arquivos .parquet foram salvos com sucesso.")
 
 
 import pandas as pd
-from bcb import sgs
+
+
 
 # === URLs da API Economatica ===
 url_cotacao = (
@@ -528,7 +529,7 @@ filter_options = [
     {'label': 'Gestora com histórico IHFA', 'value': 'ihfa'},
 ]
 
-app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
 
 from datetime import datetime, timedelta
 from dash import html, dcc

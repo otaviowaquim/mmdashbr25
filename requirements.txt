@@ -12,4 +12,4 @@ xarray==2023.12.0
 python-dotenv==1.0.1
 requests==2.32.3
 openpyxl==3.1.5
-bcb>=0.1.9,<1.0
+
