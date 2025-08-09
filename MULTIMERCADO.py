@@ -64,6 +64,8 @@ df_p       = pd.read_parquet("df_p.parquet")
 mapping_df = pd.read_parquet("mapping.parquet")  # Ativo → Nome
 mapping    = dict(zip(mapping_df["Ativo"], mapping_df["Nome"]))
 df_p = df_p.sort_index()
+if not os.path.exists("data/df_p.parquet"):
+    baixar_ou_gerar_df_p()
 
 # Lista base de fundos que têm nome no mapping
 funds = [c for c in df_p.columns if c in mapping]
@@ -142,6 +144,30 @@ ls_labels    = [mapping.get(c, c) for c in ls_cols]
 # Fundos usados nos controles (apenas os que casam com os "codes")
 fund_codes   = [c for c in df_ret_full.columns if any(c.startswith(code) for code in codes)]
 fund_options = [{"label": mapping.get(c, c), "value": c} for c in fund_codes]
+
+
+import os, requests, pandas as pd
+
+os.makedirs("data", exist_ok=True)
+
+def ensure_file(path, url_env):
+    if os.path.exists(path):
+        return
+    url = os.getenv(url_env)
+    if not url:
+        raise FileNotFoundError(f"{path} não encontrado e {url_env} não configurado.")
+    r = requests.get(url, timeout=120)
+    r.raise_for_status()
+    with open(path, "wb") as f:
+        f.write(r.content)
+
+ensure_file("data/df_p.parquet",        "DFP_URL")
+ensure_file("data/mapping.parquet",     "MAPPING_URL")
+ensure_file("data/mapping_all.parquet", "MAPPING_ALL_URL")
+
+df_p        = pd.read_parquet("data/df_p.parquet")
+mapping_df  = pd.read_parquet("data/mapping.parquet")
+df_all      = pd.read_parquet("data/mapping_all.parquet")
 
 
 
