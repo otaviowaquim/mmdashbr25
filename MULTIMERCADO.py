@@ -54,23 +54,83 @@ MAD_K        = 6
 # ======================
 # CARREGAMENTO REMOTO (Render) — sem arquivos locais
 # ======================
-import os, io, requests
+import os, io, re, requests
 import pandas as pd
 
-def load_parquet_from_url(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=60)
+# ---- Helpers p/ Google Drive (arquivos grandes exigem confirmação) ----
+def _gdrive_file_id_from_url(url: str):
+    m = re.search(r"[?&]id=([^&]+)", url)
+    if m: 
+        return m.group(1)
+    m = re.search(r"/file/d/([^/]+)/", url)
+    if m:
+        return m.group(1)
+    return None
+
+def _gdrive_confirm_token(session: requests.Session, url: str):
+    r = session.get(url, stream=True, timeout=120)
     r.raise_for_status()
-    return pd.read_parquet(io.BytesIO(r.content))
+    for k, v in r.cookies.items():
+        if k.startswith("download_warning"):
+            return v
+    return None
+
+def load_parquet_from_url(url: str) -> pd.DataFrame:
+    """
+    Faz download robusto de Parquet:
+    - trata Google Drive grande (token de confirmação)
+    - valida se não veio HTML/erro no lugar do binário
+    """
+    s = requests.Session()
+    u = url.strip()
+    file_id = _gdrive_file_id_from_url(u) if "drive.google.com" in u else None
+    if file_id:
+        base = f"https://drive.google.com/uc?export=download&id={file_id}"
+        token = _gdrive_confirm_token(s, base)
+        u = f"{base}&confirm={token}" if token else base
+
+    r = s.get(u, timeout=180)
+    r.raise_for_status()
+
+    # Defesa contra página HTML/erro
+    ct = (r.headers.get("Content-Type") or "").lower()
+    head = r.content[:256].strip().lower()
+    if "text/html" in ct or head.startswith(b"<!doctype") or head.startswith(b"<html"):
+        raise ValueError(
+            f"URL não retornou Parquet (Content-Type={ct}). "
+            "Verifique se é link direto do Drive (uc?export=download&id=...) "
+            "e se o arquivo é .parquet de verdade."
+        )
+
+    try:
+        return pd.read_parquet(io.BytesIO(r.content))
+    except Exception as e:
+        raise ValueError(
+            "Falha ao ler Parquet: conteúdo baixado não parece .parquet válido "
+            "(pode ser CSV/XLSX ou HTML)."
+        ) from e
 
 def load_table_from_url(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=60); r.raise_for_status()
+    s = requests.Session()
+    u = url.strip()
+    file_id = _gdrive_file_id_from_url(u) if "drive.google.com" in u else None
+    if file_id:
+        base = f"https://drive.google.com/uc?export=download&id={file_id}"
+        token = _gdrive_confirm_token(s, base)
+        u = f"{base}&confirm={token}" if token else base
+
+    r = s.get(u, timeout=180); r.raise_for_status()
     buf = io.BytesIO(r.content)
-    low = url.lower()
-    if low.endswith(".parquet"):
-        return pd.read_parquet(buf)
-    if low.endswith(".csv"):
-        return pd.read_csv(buf)
-    return pd.read_excel(buf)
+    low = u.lower()
+    # tenta pelo sufixo; se não tiver, tenta heurística simples
+    try:
+        if low.endswith(".parquet"):
+            return pd.read_parquet(buf)
+        if low.endswith(".csv"):
+            return pd.read_csv(buf)
+        return pd.read_excel(buf)
+    except Exception as e:
+        raise ValueError("Não foi possível ler a tabela da URL (csv/xlsx/parquet).") from e
 
 # Variáveis de ambiente do Render
 DFP_URL         = os.getenv("DFP_URL")          # preços (parquet)
@@ -125,6 +185,7 @@ if ATU_URL:
         atu_series = pd.Series(dtype="float64")
 else:
     atu_series = pd.Series(dtype="float64")
+
 
 
 
