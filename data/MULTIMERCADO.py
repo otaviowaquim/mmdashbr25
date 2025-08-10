@@ -52,80 +52,57 @@ SH_HIGH_Q    = 0.01
 MAD_K        = 6
 
 # ======================
-# CARREGAMENTO REMOTO (Render) — sem arquivos locais
+# CARREGA SÉRIES DE PREÇO E MAPPING BÁSICO
 # ======================
-import os, io, requests
+import requests
 import pandas as pd
 
-def load_parquet_from_url(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    return pd.read_parquet(io.BytesIO(r.content))
-
-def load_table_from_url(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=60); r.raise_for_status()
-    buf = io.BytesIO(r.content)
-    low = url.lower()
-    if low.endswith(".parquet"):
-        return pd.read_parquet(buf)
-    if low.endswith(".csv"):
-        return pd.read_csv(buf)
-    return pd.read_excel(buf)
-
-# Variáveis de ambiente do Render
-DFP_URL         = os.getenv("DFP_URL")          # preços (parquet)
-MAPPING_URL     = os.getenv("MAPPING_URL")      # mapping (parquet)
-MAPPING_ALL_URL = os.getenv("MAPPING_ALL_URL")  # mapping_all (parquet)
-ATU_URL         = os.getenv("ATU_URL")          # meta atuarial (csv/xlsx/parquet) — opcional
-MR_TOKEN        = os.getenv("MR_TOKEN")         # token MaisRetorno — opcional
-
-if not all([DFP_URL, MAPPING_URL, MAPPING_ALL_URL]):
-    raise RuntimeError("Defina DFP_URL, MAPPING_URL e MAPPING_ALL_URL nas Config Vars do Render.")
-
-# Séries principais
-df_p = load_parquet_from_url(DFP_URL).copy()
-df_p.index = pd.to_datetime(df_p.index)
-df_p = df_p.sort_index()
-
-mapping_df = load_parquet_from_url(MAPPING_URL).copy()
+# ————————————————————————————————
+# Série de preços dos fundos e mapping
+# ————————————————————————————————
+df_p       = pd.read_parquet("df_p.parquet")
+mapping_df = pd.read_parquet("mapping.parquet")  # Ativo → Nome
 mapping    = dict(zip(mapping_df["Ativo"], mapping_df["Nome"]))
-
-df_all = load_parquet_from_url(MAPPING_ALL_URL).copy()
-df_all["Patrimônio|||em milhares"] = pd.to_numeric(df_all["Patrimônio|||em milhares"], errors="coerce")
-df_pl  = df_all.set_index("Ativo")["Patrimônio|||em milhares"].fillna(0).astype(float) * 1000
+df_p = df_p.sort_index()
+if not os.path.exists("data/df_p.parquet"):
+    baixar_ou_gerar_df_p()
 
 # Lista base de fundos que têm nome no mapping
 funds = [c for c in df_p.columns if c in mapping]
 
-# Benchmarks via MaisRetorno
-def get_index_series(endpoint: str) -> pd.Series:
-    url = f"https://api.maisretorno.com/v3/indexes/quotes/{endpoint}"
-    headers = {"Authorization": f"Bearer {MR_TOKEN}"} if MR_TOKEN else {}
-    resp = requests.get(url, headers=headers, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-    q = pd.DataFrame(data["quotes"] if isinstance(data, dict) and "quotes" in data
-                     else pd.DataFrame(data)["quotes"].tolist())
-    q["date"]  = pd.to_datetime(q["d"], unit="ms")
-    q["value"] = q["c"]
-    return q.set_index("date")["value"].sort_index()
-
-cdi_idx  = get_index_series("cdi")
-ihfa_idx = get_index_series("ihfa")
-
-# Meta Atuarial (opcional por URL). Se não houver, fica série vazia.
-if ATU_URL:
-    try:
-        df_atu = load_table_from_url(ATU_URL)
-        col_date = next(c for c in df_atu.columns if "data" in str(c).lower())
-        col_val  = next(c for c in df_atu.columns if any(k in str(c).lower() for k in ["cota","valor","índice","indice"]))
-        df_atu[col_date] = pd.to_datetime(df_atu[col_date])
-        atu_series = df_atu.set_index(col_date)[col_val].astype(float).sort_index()
-    except Exception:
-        atu_series = pd.Series(dtype="float64")
+# ————————————————————————————————
+# Benchmarks: CDI e IHFA via API, e Meta Atuarial do Excel
+# ————————————————————————————————
+# CDI
+cdi_url = "https://api.maisretorno.com/v3/indexes/quotes/cdi"
+resp    = requests.get(cdi_url); resp.raise_for_status()
+dados   = resp.json()
+if isinstance(dados, dict) and "quotes" in dados:
+    df_q = pd.DataFrame(dados["quotes"])
 else:
-    atu_series = pd.Series(dtype="float64")
+    df_q = pd.DataFrame(pd.DataFrame(dados)["quotes"].tolist())
+df_q["date"]  = pd.to_datetime(df_q["d"], unit="ms")
+df_q["value"] = df_q["c"]
+cdi_idx = df_q.set_index("date")["value"].sort_index()
 
+# IHFA
+ihfa_url = "https://api.maisretorno.com/v3/indexes/quotes/ihfa"
+resp     = requests.get(ihfa_url); resp.raise_for_status()
+dados    = resp.json()
+if isinstance(dados, dict) and "quotes" in dados:
+    df_q = pd.DataFrame(dados["quotes"])
+else:
+    df_q = pd.DataFrame(pd.DataFrame(dados)["quotes"].tolist())
+df_q["date"]  = pd.to_datetime(df_q["d"], unit="ms")
+df_q["value"] = df_q["c"]
+ihfa_idx = df_q.set_index("date")["value"].sort_index()
+
+# Meta Atuarial (Excel)
+try:
+    df_atu = pd.read_excel("serie_historica_atuarial_30_06.xlsx", parse_dates=["Data"]).set_index("Data")
+    atu_series = df_atu["Cota"].sort_index()
+except Exception:
+    atu_series = pd.Series(dtype="float64")
 
 
 # ======================
@@ -1835,9 +1812,8 @@ def update_dendrogram(vol_range, selected_codes):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))
-    app.run_server(host="0.0.0.0", port=port, debug=False)
-
+    # Local
+    app.run_server(host="0.0.0.0", port=8050, debug=True)
 
 
 
